@@ -274,6 +274,252 @@
     document.getElementById('daily-bias').className = "status-value status-bullish";
 
     setInterval(updateEngine, 1000);
+    setInterval(fetchMarket, 8000); 
+    log("QT Assistant Initialized.");
+
+</script>
+</body>
+</html>
+            border-bottom: 1px solid #2a2e39;
+        }
+
+        .clock-display { font-family: monospace; font-size: 1.4rem; font-weight: bold; color: #fb8c00; }
+        .quarter-badge { padding: 5px 10px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; }
+        
+        .main-container {
+            display: grid; grid-template-columns: 3fr 1.2fr;
+            gap: 10px; padding: 10px; height: 100%; overflow: hidden;
+        }
+
+        .chart-section { background-color: var(--panel-color); border-radius: 8px; display: flex; flex-direction: column; }
+        #tv-chart { flex: 1; border-radius: 8px; }
+        
+        .cycle-progress { height: 18px; width: 100%; background: #333; display: flex; margin-bottom: 5px; border-radius: 4px; overflow: hidden; }
+        .cycle-bar { height: 100%; flex: 1; display: flex; align-items: center; justify-content: center; font-size: 10px; color: white; opacity: 0.3; transition: all 0.3s; }
+        .bg-q1 { background-color: var(--q1-color); }
+        .bg-q2 { background-color: var(--q2-color); }
+        .bg-q3 { background-color: var(--q3-color); }
+        .bg-q4 { background-color: var(--q4-color); }
+
+        .sidebar { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+        .card { background-color: var(--panel-color); padding: 12px; border-radius: 8px; border: 1px solid #2a2e39; }
+        .card h3 { margin: 0 0 10px 0; font-size: 0.9rem; color: #888; border-bottom: 1px solid #333; padding-bottom: 5px; }
+        
+        .status-item { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.85rem; }
+        .status-value { font-weight: bold; }
+        .status-bullish { color: var(--accent-green); }
+        .status-bearish { color: var(--accent-red); }
+
+        .log-box { font-family: monospace; font-size: 0.75rem; height: 120px; overflow-y: auto; background: #000; padding: 8px; border-radius: 4px; color: #aaa; }
+        .log-entry { border-bottom: 1px solid #111; padding: 2px 0; }
+        .blink { animation: blinker 1s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+<header>
+    <div>
+        <h2 style="margin:0; font-size:1.1rem;">Quarterly Assistant (Real-time)</h2>
+        <div id="date-display" style="font-size: 0.75rem; color:#666;">--</div>
+    </div>
+    <div style="text-align: center;">
+        <div id="ny-time" style="font-size: 0.75rem; color:#888;">NY Time: --:--</div>
+        <div id="thai-time" class="clock-display">--:--:--</div>
+    </div>
+    <div id="current-quarter-badge" class="quarter-badge bg-q1">Q1 Accumulation</div>
+</header>
+
+<div class="main-container">
+    <div class="chart-section">
+        <div style="padding: 8px; font-size: 0.85rem; background:#111; display:flex; justify-content:space-between; border-radius:8px 8px 0 0;">
+            <span>Current Cycle: <strong id="cycle-type">90-Minute</strong></span>
+            <span>True Open (Q2): <strong id="true-open-price" style="color:#fb8c00;">-</strong></span>
+        </div>
+        <div class="cycle-progress">
+            <div id="p-q1" class="cycle-bar bg-q1">Q1</div>
+            <div id="p-q2" class="cycle-bar bg-q2">Q2</div>
+            <div id="p-q3" class="cycle-bar bg-q3">Q3</div>
+            <div id="p-q4" class="cycle-bar bg-q4">Q4</div>
+        </div>
+        <div id="tv-chart"></div>
+    </div>
+
+    <div class="sidebar">
+        <div class="card">
+            <h3>1. Daily Bias (Yesterday) [EP.7]</h3>
+            <div class="status-item"><span>Bias State:</span><span id="daily-bias" class="status-value">Loading...</span></div>
+        </div>
+
+        <div class="card">
+            <h3>2. SMT Scanner [EP.3]</h3>
+            <div class="status-item"><span>XAU vs XAG:</span><span id="smt-status" class="status-value">None</span></div>
+            <div class="status-item"><span>DXY Conf:</span><span id="dxy-status" class="status-value">-</span></div>
+            <div id="smt-alert" style="display:none; background:#440000; color:#ffaaaa; padding:6px; text-align:center; font-size:0.8rem; border-radius:4px;" class="blink">⚠️ SMT DETECTED</div>
+        </div>
+
+        <div class="card">
+            <h3>3. True Open Filter [EP.2]</h3>
+            <div class="status-item"><span>Price:</span><span id="curr-price" class="status-value">--</span></div>
+            <div class="status-item"><span>Zone:</span><span id="price-zone" class="status-value">--</span></div>
+        </div>
+
+        <div class="card">
+            <h3>4. Confirmation (tCISD) [EP.4/5]</h3>
+            <div class="status-item"><span>tCISD:</span><span id="tcisd-status" class="status-value">Scanning...</span></div>
+            <div class="status-item"><span>Recommend:</span><span id="asset-rec" class="status-value">-</span></div>
+        </div>
+
+        <div class="card" style="flex:1;">
+            <h3>System Logs</h3>
+            <div id="system-log" class="log-box"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- API & State ---
+    const API_KEY = '2239153b548f43c0ad3d5cc5655295c1';
+    let state = {
+        q: 1,
+        trueOpen: null,
+        prevExtreme: { high: 0, low: 99999 },
+        currExtreme: { high: 0, low: 99999 },
+        leadOpen: null,
+        prices: { xau: 0, xag: 0, dxy: 0 }
+    };
+
+    // --- Chart Setup ---
+    const chart = LightweightCharts.createChart(document.getElementById('tv-chart'), {
+        layout: { background: { color: '#1a1d24' }, textColor: '#DDD' },
+        grid: { vertLines: { color: '#222' }, horzLines: { color: '#222' } },
+        timeScale: { timeVisible: true, secondsVisible: true }
+    });
+    const candleSeries = chart.addCandlestickSeries({ upColor: '#26a69a', downColor: '#ef5350' });
+    const trueOpenLine = chart.createPriceLine({ price: 0, color: '#fb8c00', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dotted, title: 'True Open' });
+
+    // --- Time Engine (Logic 1) ---
+    function updateEngine() {
+        const now = new Date();
+        const month = now.getMonth() + 1;
+        const offset = (month > 3 && month < 11) ? 11 : 12; // DST Check
+        const nyTime = new Date(now.getTime() - (offset * 60 * 60 * 1000));
+        
+        document.getElementById('thai-time').innerText = now.toLocaleTimeString('th-TH');
+        document.getElementById('ny-time').innerText = `NY Time: ${nyTime.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'})}`;
+        document.getElementById('date-display').innerText = now.toLocaleDateString('th-TH', { weekday:'long', day:'numeric', month:'long' });
+
+        // 90-Min Cycle (Based on NY Midnight = 12:00 Thai Winter)
+        const totalMin = (now.getHours() * 60) + now.getMinutes() - (6 * 60); 
+        const cycleMin = totalMin % 90;
+        const q = Math.floor(cycleMin / 22.5) + 1;
+
+        if (q !== state.q) {
+            state.prevExtreme = { ...state.currExtreme };
+            state.currExtreme = { high: 0, low: 99999 };
+            state.q = q;
+            state.trueOpen = null;
+            state.leadOpen = null;
+            log(`Transition to Q${q}`);
+        }
+
+        // True Open Locking (Logic 3)
+        if (cycleMin >= 22.5 && state.trueOpen === null) {
+            state.trueOpen = state.prices.xau;
+            document.getElementById('true-open-price').innerText = state.trueOpen.toFixed(2);
+            trueOpenLine.applyOptions({ price: state.trueOpen });
+            log(`True Open Locked: ${state.trueOpen}`);
+        }
+
+        updateUI(q);
+    }
+
+    function updateUI(q) {
+        const badge = document.getElementById('current-quarter-badge');
+        const qNames = ["Accumulation", "Manipulation", "Distribution", "Reversal/Cont"];
+        badge.innerText = `Q${q} ${qNames[q-1]}`;
+        badge.className = `quarter-badge bg-q${q}`;
+        for(let i=1; i<=4; i++) {
+            const el = document.getElementById(`p-q${i}`);
+            el.style.opacity = (i === q) ? "1" : "0.3";
+            el.style.border = (i === q) ? "1px solid #fff" : "none";
+        }
+    }
+
+    // --- Data & SMT Logic (Logic 2, 4, 6) ---
+    async function fetchMarket() {
+        try {
+            const res = await fetch(`https://api.twelvedata.com/quotes?symbol=XAU/USD,XAG/USD,DXY&apikey=${API_KEY}`);
+            const data = await res.json();
+            
+            if (data['XAU/USD']) {
+                const xau = parseFloat(data['XAU/USD'].close);
+                const xag = parseFloat(data['XAG/USD'].close);
+                const dxy = parseFloat(data['DXY'].close);
+                
+                state.prices = { xau, xag, dxy };
+                processCore(xau, xag, dxy);
+                
+                candleSeries.update({ time: Math.floor(Date.now() / 1000), open: xau, high: xau, low: xau, close: xau });
+                document.getElementById('curr-price').innerText = xau.toFixed(2);
+            }
+        } catch (e) { console.error("API error", e); }
+    }
+
+    function processCore(xau, xag, dxy) {
+        if (xau > state.currExtreme.high) state.currExtreme.high = xau;
+        if (xau < state.currExtreme.low) state.currExtreme.low = xau;
+
+        // SMT Logic [EP.3]
+        if (state.q === 2 || state.q === 3) {
+            if (xau < state.prevExtreme.low && xag > state.prevExtreme.low) {
+                document.getElementById('smt-status').innerText = "BULLISH SMT";
+                document.getElementById('smt-alert').style.display = 'block';
+                state.leadOpen = xau; // tCISD Trace
+                log("SMT Alert: XAU swept Low, XAG holding.");
+            } else if (xau > state.prevExtreme.high && xag < state.prevExtreme.high) {
+                document.getElementById('smt-status').innerText = "BEARISH SMT";
+                document.getElementById('smt-alert').style.display = 'block';
+                state.leadOpen = xau;
+                log("SMT Alert: XAU swept High, XAG holding.");
+            }
+        }
+
+        // True Open Filter [EP.2]
+        if (state.trueOpen) {
+            const isDisc = xau < state.trueOpen;
+            const zone = isDisc ? "DISCOUNT" : "PREMIUM";
+            document.getElementById('price-zone').innerText = zone;
+            document.getElementById('price-zone').className = `status-value ${isDisc ? "status-bullish" : "status-bearish"}`;
+        }
+
+        // tCISD Confirmation [EP.4]
+        if (state.leadOpen) {
+            const confirmed = (xau > state.leadOpen); // For Bullish
+            if (confirmed) {
+                document.getElementById('tcisd-status').innerText = "CONFIRMED";
+                document.getElementById('tcisd-status').className = "status-value status-bullish blink";
+            }
+        }
+        
+        // SMT-Fill Strength [EP.6]
+        const strong = (xau < xag) ? "XAUUSD" : "XAGUSD";
+        document.getElementById('asset-rec').innerText = `Prefer ${strong}`;
+    }
+
+    function log(m) {
+        const box = document.getElementById('system-log');
+        const d = document.createElement('div');
+        d.className = 'log-entry';
+        d.innerHTML = `<span>[${new Date().toLocaleTimeString()}]</span> ${m}`;
+        box.prepend(d);
+    }
+
+    // Init Daily Bias (Logic 5/7)
+    document.getElementById('daily-bias').innerText = "REVERSAL (EP.7)";
+    document.getElementById('daily-bias').className = "status-value status-bullish";
+
+    setInterval(updateEngine, 1000);
     setInterval(fetchMarket, 8000); // อัปเดตทุก 8 วินาทีตามโควต้า API ฟรี
     log("QT Assistant Initialized.");
 
