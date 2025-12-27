@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quarterly Theory Assistant (XAUUSD)</title>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f1115;
+            --panel-color: #1a1d24;
+            --text-color: #e1e3e6;
+            --accent-green: #26a69a;
+            --accent-red: #ef5350;
+            --q1-color: #363a45; /* Grey - Accumulation */
+            --q2-color: #ef5350; /* Red - Manipulation */
+            --q3-color: #26a69a; /* Green - Distribution */
+            --q4-color: #2962ff; /* Blue - Reversal/Cont */
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: grid;
+            grid-template-rows: 60px 1fr;
+            height: 100vh;
+        }
+
+        /* Header / Clock */
+        header {
+            background-color: var(--panel-color);
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #2a2e39;
+        }
+
+        .clock-panel h1 { margin: 0; font-size: 1.2rem; }
+        .clock-display { font-family: monospace; font-size: 1.4rem; font-weight: bold; color: #fb8c00; }
+        .quarter-badge { padding: 5px 10px; border-radius: 4px; font-weight: bold; font-size: 0.9rem; }
+        
+        /* Layout Grid */
+        .main-container {
+            display: grid;
+            grid-template-columns: 3fr 1fr; /* กราฟ 75% | ข้อมูล 25% */
+            gap: 10px;
+            padding: 10px;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        /* Chart Area */
+        .chart-section {
+            background-color: var(--panel-color);
+            border-radius: 8px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #tv-chart { flex: 1; width: 100%; height: 100%; border-radius: 8px; }
+        
+        .cycle-progress {
+            height: 20px;
+            width: 100%;
+            background: #333;
+            display: flex;
+            margin-bottom: 5px;
+        }
+        .cycle-bar { height: 100%; transition: width 1s linear; display: flex; align-items: center; justify-content: center; font-size: 10px; color: white; }
+        .bg-q1 { background-color: var(--q1-color); }
+        .bg-q2 { background-color: var(--q2-color); }
+        .bg-q3 { background-color: var(--q3-color); }
+        .bg-q4 { background-color: var(--q4-color); }
+
+        /* Sidebar / Logic Panel */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            overflow-y: auto;
+        }
+
+        .card {
+            background-color: var(--panel-color);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #2a2e39;
+        }
+
+        .card h3 { margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 5px; font-size: 1rem; color: #888; }
+        
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+        
+        .status-value { font-weight: bold; }
+        .status-bullish { color: var(--accent-green); }
+        .status-bearish { color: var(--accent-red); }
+        .status-neutral { color: #888; }
+
+        .log-box {
+            font-family: monospace;
+            font-size: 0.8rem;
+            height: 150px;
+            overflow-y: auto;
+            background: #000;
+            padding: 5px;
+            border: 1px solid #333;
+        }
+        
+        .log-entry { margin-bottom: 4px; border-bottom: 1px solid #222; padding-bottom: 2px; }
+        .log-time { color: #888; margin-right: 5px; }
+
+        /* Helpers */
+        .blink { animation: blinker 1.5s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0; } }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="clock-panel">
+            <h1>Quarterly Theory Assistant (XAUUSD)</h1>
+            <div id="date-display" style="font-size: 0.8rem; color:#888;">loading...</div>
+        </div>
+        <div style="text-align: right;">
+            <div id="ny-time" style="font-size: 0.8rem; color:#888;">NY Time: --:--</div>
+            <div id="thai-time" class="clock-display">--:--:--</div>
+        </div>
+        <div id="current-quarter-badge" class="quarter-badge bg-q1">Q1 Accumulation</div>
+    </header>
+
+    <div class="main-container">
+        <div class="chart-section">
+            <div style="padding: 5px 10px; font-size: 0.9rem; background:#222; display:flex; justify-content:space-between;">
+                <span>Cycle: <strong id="cycle-type">Daily (Winter)</strong></span>
+                <span>True Open (Q2): <strong id="true-open-price" style="color:#fb8c00;">Waiting...</strong></span>
+            </div>
+            <div class="cycle-progress">
+                <div id="p-q1" class="cycle-bar bg-q1" style="width: 25%">Q1</div>
+                <div id="p-q2" class="cycle-bar bg-q2" style="width: 25%">Q2</div>
+                <div id="p-q3" class="cycle-bar bg-q3" style="width: 25%">Q3</div>
+                <div id="p-q4" class="cycle-bar bg-q4" style="width: 25%">Q4</div>
+            </div>
+            <div id="tv-chart"></div>
+        </div>
+
+        <div class="sidebar">
+            
+            <div class="card">
+                <h3>1. Daily Bias (Yesterday)</h3>
+                <div class="status-item">
+                    <span>Bias:</span>
+                    <span id="daily-bias" class="status-value status-neutral">Calculating...</span>
+                </div>
+                <div style="font-size:0.8rem; color:#666;">Based on Close vs High/Low</div>
+            </div>
+
+            <div class="card">
+                <h3>2. SMT Scanner (EP.3)</h3>
+                <div class="status-item">
+                    <span>XAU vs XAG:</span>
+                    <span id="smt-status" class="status-value status-neutral">None</span>
+                </div>
+                <div class="status-item">
+                    <span>DXY Conf:</span>
+                    <span id="dxy-status" class="status-value status-neutral">-</span>
+                </div>
+                <div id="smt-alert-box" style="display:none; background:#330000; color:#ff9999; padding:5px; text-align:center; margin-top:5px;" class="blink">
+                    ⚠️ BULLISH SMT DETECTED
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>3. True Open Filter (EP.2)</h3>
+                <div class="status-item">
+                    <span>Current Price:</span>
+                    <span id="curr-price" class="status-value">--</span>
+                </div>
+                <div class="status-item">
+                    <span>Zone:</span>
+                    <span id="price-zone" class="status-value status-neutral">--</span>
+                </div>
+                <div class="status-item">
+                    <span>Action:</span>
+                    <span id="action-rec" class="status-value">WAIT</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>4. Confirmation (tCISD/PSP)</h3>
+                <div class="status-item">
+                    <span>tCISD:</span>
+                    <span id="tcisd-status" class="status-value status-neutral">Scanning...</span>
+                </div>
+                <div class="status-item">
+                    <span>PSP (5m):</span>
+                    <span id="psp-status" class="status-value status-neutral">No Divergence</span>
+                </div>
+            </div>
+
+            <div class="card" style="flex:1;">
+                <h3>System Logs</h3>
+                <div id="system-log" class="log-box">
+                    <div class="log-entry">System Initialized...</div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- 1. CONFIGURATION & STATE ---
+        const CONFIG = {
+            isWinterTime: true, // true = NY+12 (Standard), false = NY+11 (DST)
+            dailyCycleStart: 12, // 12:00 Thai Time (Winter) = 00:00 NY
+        };
+
+        let state = {
+            currentQuarter: 1,
+            trueOpenPrice: null, // เก็บราคา True Open
+            lastQuarterExtreme: { high: 0, low: 999999 }, // เก็บ High/Low ของ Q ก่อนหน้า
+            dailyBias: 'Neutral',
+            xauData: [],
+            xagData: [], 
+            dxyData: []
+        };
+
+        // --- 2. TIME ENGINE (THAI-NY) ---
+        function updateTimeEngine() {
+            const now = new Date();
+            const thaiTimeStr = now.toLocaleTimeString('th-TH', { hour12: false });
+            
+            // NY Time Calculation
+            const offset = CONFIG.isWinterTime ? 12 : 11;
+            const nyTime = new Date(now.getTime() - (offset * 60 * 60 * 1000));
+            
+            document.getElementById('thai-time').innerText = thaiTimeStr;
+            document.getElementById('ny-time').innerText = `NY: ${nyTime.toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'})}`;
+            document.getElementById('date-display').innerText = now.toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+            // Calculate 90-Minute Cycle
+            // NY AM Starts at 18:00 Thai (Winter)
+            // Cycle 1: 18:00 - 19:30
+            // Cycle 2: 19:30 - 21:00 (Example: NY Open)
+            
+            const totalMinutesToday = (now.getHours() * 60) + now.getMinutes() + (now.getSeconds() / 60);
+            
+            // หาว่าอยู่ในรอบ 90 นาทีที่เท่าไหร่
+            // Offset logic: Start counting from 6:00 AM Thai (Daily Start)
+            const minutesSinceDailyStart = totalMinutesToday - (6 * 60); 
+            const cycleDuration = 90;
+            const currentCycleMinutes = minutesSinceDailyStart % cycleDuration;
+            
+            let q = 0;
+            let qName = "";
+            let qColorClass = "";
+
+            // Q Logic: 0-22.5, 22.5-45, 45-67.5, 67.5-90
+            if (currentCycleMinutes < 22.5) {
+                q = 1; qName = "Q1 Accumulation"; qColorClass = "bg-q1";
+            } else if (currentCycleMinutes < 45) {
+                q = 2; qName = "Q2 Manipulation"; qColorClass = "bg-q2";
+            } else if (currentCycleMinutes < 67.5) {
+                q = 3; qName = "Q3 Distribution"; qColorClass = "bg-q3";
+            } else {
+                q = 4; qName = "Q4 Reversal/Cont"; qColorClass = "bg-q4";
+            }
+
+            // Update UI
+            const badge = document.getElementById('current-quarter-badge');
+            badge.className = `quarter-badge ${qColorClass}`;
+            badge.innerText = qName + ` (${Math.floor(currentCycleMinutes)}m)`;
+
+            // Highlight Progress Bar
+            ['p-q1', 'p-q2', 'p-q3', 'p-q4'].forEach((id, idx) => {
+                const el = document.getElementById(id);
+                el.style.opacity = (idx + 1) === q ? "1" : "0.3";
+                el.style.border = (idx + 1) === q ? "2px solid white" : "none";
+            });
+
+            // --- TRUE OPEN LOGIC (Capture at 22.5m) ---
+            // ในทางปฏิบัติ เราจะเช็คว่า currentCycleMinutes เพิ่งผ่าน 22.5 หรือไม่
+            // สำหรับ Mockup นี้ เราจะสุ่มราคา True Open ถ้ายังไม่มี
+            if (q === 2 && state.trueOpenPrice === null) {
+                // สมมติว่านี่คือวินาทีที่ 22.5
+                captureTrueOpen();
+            }
+            if (q === 1) {
+                // Reset รอบใหม่
+                state.trueOpenPrice = null; 
+                document.getElementById('true-open-price').innerText = "Waiting for Q2...";
+            }
+
+            return { q, currentCycleMinutes };
+        }
+
+        function captureTrueOpen() {
+            // ในระบบจริง: ดึงราคาปัจจุบันจาก API
+            // ในระบบจำลอง: ใช้ราคาปิดล่าสุดจากกราฟ
+            const currentPrice = currentSimulatedPrice; 
+            state.trueOpenPrice = currentPrice;
+            document.getElementById('true-open-price').innerText = state.trueOpenPrice.toFixed(2);
+            log(`True Open Captured @ ${state.trueOpenPrice.toFixed(2)}`);
+        }
+
+        // --- 3. SMT LOGIC & SIMULATION ---
+        let currentSimulatedPrice = 2650.00; // XAU Start
+        let simXAG = 31.00; // XAG Start
+        let simDXY = 104.00; // DXY Start
+
+        // สร้างกราฟด้วย Lightweight Charts
+        const chart = LightweightCharts.createChart(document.getElementById('tv-chart'), {
+            layout: { background: { color: '#1a1d24' }, textColor: '#DDD' },
+            grid: { vertLines: { color: '#333' }, horzLines: { color: '#333' } },
+            timeScale: { timeVisible: true, secondsVisible: false },
+        });
+        const candleSeries = chart.addCandlestickSeries();
+        const trueOpenLine = chart.createPriceLine({
+            price: 0,
+            color: '#fb8c00',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: 'True Open (Q2)',
+        });
+
+        // Mock Data Generator
+        function generateCandle(time) {
+            const volatility = (Math.random() - 0.5) * 2; // Random move
+            const open = currentSimulatedPrice;
+            const close = open + volatility;
+            const high = Math.max(open, close) + Math.random();
+            const low = Math.min(open, close) - Math.random();
+            
+            currentSimulatedPrice = close;
+            
+            // Simulating Correlation for SMT
+            // บางทีให้ Gold ลงแต่ Silver ไม่ลง (Bullish SMT)
+            const isSMTCondition = Math.random() > 0.85; 
+            
+            let xagMove = volatility * 0.8; // Silver usually moves with Gold
+            if (isSMTCondition && volatility < 0) {
+                 xagMove = volatility * -0.2; // Divergence: Gold down, Silver slightly up
+            }
+            simXAG += xagMove;
+
+            return { time: time, open, high, low, close, isSMT: isSMTCondition };
+        }
+
+        function runLogicLoop(candleData) {
+            // A. Update UI Price
+            document.getElementById('curr-price').innerText = candleData.close.toFixed(2);
+
+            // B. True Open Filter Logic
+            if (state.trueOpenPrice) {
+                trueOpenLine.applyOptions({ price: state.trueOpenPrice }); // Draw Line
+                
+                const zoneEl = document.getElementById('price-zone');
+                const actionEl = document.getElementById('action-rec');
+                
+                if (candleData.close < state.trueOpenPrice) {
+                    zoneEl.innerText = "DISCOUNT (Cheap)";
+                    zoneEl.className = "status-value status-bullish";
+                    actionEl.innerText = "Look for LONG Buys";
+                    actionEl.style.color = "#26a69a";
+                } else {
+                    zoneEl.innerText = "PREMIUM (Expensive)";
+                    zoneEl.className = "status-value status-bearish";
+                    actionEl.innerText = "Look for SHORT Sells";
+                    actionEl.style.color = "#ef5350";
+                }
+            }
+
+            // C. SMT Scanner Logic (Simplified for Mock)
+            const smtEl = document.getElementById('smt-status');
+            const alertBox = document.getElementById('smt-alert-box');
+            
+            if (candleData.isSMT) {
+                // สมมติสถานการณ์ Bullish SMT
+                smtEl.innerText = "BULLISH DIV DETECTED";
+                smtEl.className = "status-value status-bullish";
+                alertBox.style.display = 'block';
+                alertBox.innerText = "⚠️ BULLISH SMT: XAU New Low / XAG Holding";
+                log("SMT Alert: XAU made Low, XAG did not.");
+                
+                // Trigger tCISD Check
+                document.getElementById('tcisd-status').innerText = "Watch Last Candle High...";
+            } else {
+                smtEl.innerText = "Correlated";
+                smtEl.className = "status-value status-neutral";
+                alertBox.style.display = 'none';
+            }
+
+            // D. Daily Bias (Mock)
+            // สมมติว่าเมื่อวานเป็น Reversal
+            if (state.dailyBias === 'Neutral') {
+                 state.dailyBias = "BULLISH (Reversal Prev Day)";
+                 document.getElementById('daily-bias').innerText = state.dailyBias;
+                 document.getElementById('daily-bias').className = "status-value status-bullish";
+            }
+        }
+
+        function log(msg) {
+            const logBox = document.getElementById('system-log');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const time = new Date().toLocaleTimeString('th-TH');
+            entry.innerHTML = `<span class="log-time">[${time}]</span> ${msg}`;
+            logBox.prepend(entry);
+        }
+
+        // --- 4. INITIALIZATION & LOOP ---
+        let lastCandleTime = Math.floor(Date.now() / 1000);
+        
+        // Init Daily Bias based on Logic 5
+        log("Checking Daily Bias: Yesterday swept liquidity & closed inside. Bias = REVERSAL.");
+
+        setInterval(() => {
+            updateTimeEngine();
+            
+            // จำลองกราฟขยับทุก 1 วินาที
+            lastCandleTime += 60; // 1 min candle for simulation speed
+            const candle = generateCandle(lastCandleTime);
+            candleSeries.update(candle);
+            runLogicLoop(candle);
+
+        }, 1000);
+
+        // Resize Chart logic
+        window.addEventListener('resize', () => {
+            chart.resize(document.querySelector('.chart-section').clientWidth, document.querySelector('.chart-section').clientHeight);
+        });
+
+    </script>
+</body>
+</html>
